@@ -23,7 +23,9 @@ const weather: WeatherSnapshot = {
   pm25_one_hourly: 9,
   air_quality_region: 'central',
   forecast_periods: [{ label: 'Now', forecast: 'Cloudy' }],
-  daily_forecast: [{ date: '2026-05-04', forecast: 'Cloudy', temperature_low_c: 25, temperature_high_c: 32 }],
+  daily_forecast: [
+    { date: '2026-05-04', forecast: 'Cloudy', temperature_low_c: 25, temperature_high_c: 32 },
+  ],
 };
 
 describe('locations API', () => {
@@ -71,5 +73,24 @@ describe('locations API', () => {
     const listResponse = await request(app).get('/api/locations').expect(200);
     expect(listResponse.body.locations).toHaveLength(1);
     expect(listResponse.body.locations[0].weather.condition).toBe('Cloudy');
+  });
+
+  it('deletes a location and removes it from the list', async () => {
+    const created = await request(app)
+      .post('/api/locations')
+      .send({ latitude: 1.31, longitude: 103.78 })
+      .expect(201);
+
+    const id = created.body.id as number;
+
+    await request(app).delete(`/api/locations/${id}`).expect(204);
+    await request(app).get(`/api/locations/${id}`).expect(404);
+
+    const listResponse = await request(app).get('/api/locations').expect(200);
+    expect(listResponse.body.locations.some((l: { id: number }) => l.id === id)).toBe(false);
+  });
+
+  it('returns 404 when deleting an unknown location', async () => {
+    await request(app).delete('/api/locations/999999').expect(404);
   });
 });

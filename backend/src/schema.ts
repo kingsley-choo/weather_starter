@@ -61,5 +61,5 @@ export const locations = sqliteTable(
   },
   (table) => [
     uniqueIndex('locations_latitude_longitude_unique').on(table.latitude, table.longitude),
-  ],
+  ]
 );

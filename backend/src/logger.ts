@@ -23,5 +23,5 @@ export const logger = pino(
       service: 'weather-starter',
     },
   },
-  stream,
+  stream
 );

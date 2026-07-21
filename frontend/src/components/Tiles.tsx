@@ -1,4 +1,12 @@
-import { CloudIcon, DropletIcon, SunIcon, ThermometerIcon, TrendIcon, WindIcon } from './icons';
+import {
+  CloudIcon,
+  DropletIcon,
+  LocationIcon,
+  SunIcon,
+  ThermometerIcon,
+  TrendIcon,
+  WindIcon,
+} from './icons';
 import type { ReactNode } from 'react';
 import type { WeatherSnapshot } from '../types';
 
@@ -16,7 +24,8 @@ interface TileShellProps {
 function TileShell({ icon, title, className = '', children }: TileShellProps) {
   return (
     <section
-      className={`flex flex-col gap-3 rounded-2xl border border-white/15 bg-white/[0.08] p-4 backdrop-blur-xl ${className}`}
+      className={`flex flex-col gap-3 rounded-2xl p-4 backdrop-blur-xl ${className}`}
+      style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
     >
       <header className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/60">
         {icon}
@@ -63,6 +72,23 @@ function ScaleBar({ value, max, gradientClass }: ScaleBarProps) {
       )}
     </div>
   );
+}
+
+function humidityLabel(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return '';
+  if (value < 40) return 'Dry';
+  if (value < 60) return 'Comfortable';
+  if (value < 80) return 'Humid';
+  return 'Very Humid';
+}
+
+function rainfallLabel(value: number | null | undefined): string {
+  if (!isFiniteNumber(value)) return '';
+  if (value === 0) return 'No rain';
+  if (value < 2.5) return 'Light rain';
+  if (value < 7.5) return 'Moderate rain';
+  if (value < 30) return 'Heavy rain';
+  return 'Very heavy rain';
 }
 
 function airQualityLabel(psi: number | null | undefined): string {
@@ -190,10 +216,15 @@ export function UVTile({ weather }: WeatherProps) {
 }
 
 export function TemperatureTile({ weather }: WeatherProps) {
+  const high = formatTemperature(weather?.forecast_high_c);
+  const low = formatTemperature(weather?.forecast_low_c);
   return (
     <TileShell icon={<ThermometerIcon />} title="Temperature">
       <div className="text-4xl font-light leading-none tabular-nums text-white/95">
         {formatTemperature(weather?.temperature_c)}&deg;
+      </div>
+      <div className="mt-1 text-sm tabular-nums text-white/70">
+        H:{high}&deg; &nbsp;L:{low}&deg;
       </div>
       <p className="mt-3 text-xs leading-snug text-white/70">
         Nearest realtime temperature station.
@@ -208,7 +239,7 @@ export function PrecipitationTile({ weather }: WeatherProps) {
       <div className="text-4xl font-light leading-none tabular-nums text-white/95">
         {formatNumber(weather?.rainfall_mm, 1)} mm
       </div>
-      <div className="mt-1 text-sm text-white/85">Latest reading</div>
+      <div className="mt-1 text-sm text-white/85">{rainfallLabel(weather?.rainfall_mm)}</div>
       <p className="mt-3 text-xs leading-snug text-white/70">Nearest realtime rainfall station.</p>
     </TileShell>
   );
@@ -220,6 +251,12 @@ export function HumidityTile({ weather }: WeatherProps) {
       <div className="text-4xl font-light leading-none tabular-nums text-white/95">
         {formatNumber(weather?.humidity_percent)}%
       </div>
+      <div className="mt-1 text-sm text-white/85">{humidityLabel(weather?.humidity_percent)}</div>
+      <ScaleBar
+        value={weather?.humidity_percent}
+        max={100}
+        gradientClass="bg-gradient-to-r from-amber-300 via-sky-400 to-blue-600"
+      />
       <p className="mt-3 text-xs leading-snug text-white/70">Nearest realtime humidity station.</p>
     </TileShell>
   );
@@ -227,19 +264,47 @@ export function HumidityTile({ weather }: WeatherProps) {
 
 export function AveragesTile({ weather }: WeatherProps) {
   return (
-    <TileShell icon={<TrendIcon />} title="Forecast High">
+    <TileShell icon={<TrendIcon />} title="Daily Range">
       <div className="text-4xl font-light leading-none tabular-nums text-white/95">
         {formatTemperature(weather?.forecast_high_c)}&deg;
       </div>
       <div className="mt-1 text-xs leading-snug text-white/75">
-        Today&apos;s high from the 24-hour forecast.
+        Today&apos;s range from the 24-hour forecast.
       </div>
       <ul className="mt-3 space-y-1 text-xs text-white/70">
         <li className="flex justify-between border-t border-white/10 pt-1.5">
-          <span>Today</span>
-          <span className="tabular-nums">H:{formatTemperature(weather?.forecast_high_c)}&deg;</span>
+          <span>High</span>
+          <span className="tabular-nums">{formatTemperature(weather?.forecast_high_c)}&deg;</span>
+        </li>
+        <li className="flex justify-between border-t border-white/10 pt-1.5">
+          <span>Low</span>
+          <span className="tabular-nums">{formatTemperature(weather?.forecast_low_c)}&deg;</span>
         </li>
       </ul>
+    </TileShell>
+  );
+}
+
+export function ConditionTile({ weather }: WeatherProps) {
+  const condition = weather?.condition ?? '--';
+  const area = weather?.area;
+  const validPeriod = weather?.valid_period_text;
+
+  return (
+    <TileShell
+      icon={<CloudIcon className="h-3.5 w-3.5" />}
+      title="Condition"
+      className="col-span-2"
+    >
+      <div className="text-2xl font-light leading-snug text-white/95">{condition}</div>
+      {area && (
+        <div className="mt-2 flex items-center gap-1 text-xs text-white/70">
+          <LocationIcon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{area}</span>
+        </div>
+      )}
+      {validPeriod && <p className="mt-2 text-xs leading-snug text-white/60">{validPeriod}</p>}
+      <p className="mt-3 text-xs leading-snug text-white/50">2-hour forecast · NEA</p>
     </TileShell>
   );
 }
@@ -247,6 +312,7 @@ export function AveragesTile({ weather }: WeatherProps) {
 export function TileGrid({ weather }: WeatherProps) {
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <ConditionTile weather={weather} />
       <AirQualityTile weather={weather} />
       <WindTile weather={weather} />
       <UVTile weather={weather} />

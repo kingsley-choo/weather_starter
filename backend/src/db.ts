@@ -51,7 +51,7 @@ await migrate(
       if (trimmed) sqlite.exec(trimmed);
     }
   },
-  { migrationsFolder: join(process.cwd(), 'backend', 'drizzle') },
+  { migrationsFolder: join(process.cwd(), 'backend', 'drizzle') }
 );
 
 export async function listLocations(): Promise<LocationRecord[]> {
@@ -94,9 +94,18 @@ export async function getLocation(id: number): Promise<LocationRecord | null> {
   return row ? rowToRecord(row) : null;
 }
 
+export async function deleteLocation(id: number): Promise<boolean> {
+  const result = await db
+    .delete(locations)
+    .where(eq(locations.id, id))
+    .returning({ id: locations.id })
+    .get();
+  return result !== undefined;
+}
+
 export async function updateWeather(
   id: number,
-  weather: WeatherSnapshot,
+  weather: WeatherSnapshot
 ): Promise<LocationRecord | null> {
   const columns = weatherToColumns(weather);
   const row = await db.update(locations).set(columns).where(eq(locations.id, id)).returning().get();
@@ -164,7 +173,7 @@ function rowToRecord(row: LocationRow): LocationRecord {
 async function sqliteCallback(
   sql: string,
   params: unknown[],
-  method: 'run' | 'all' | 'values' | 'get',
+  method: 'run' | 'all' | 'values' | 'get'
 ): Promise<{ rows: unknown[] }> {
   const statement = sqlite.prepare(sql);
   const bindings = params as never[];

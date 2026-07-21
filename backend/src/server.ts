@@ -52,7 +52,7 @@ export async function createApp(options: AppOptions = {}) {
         metadata: metadata && typeof metadata === 'object' ? metadata : undefined,
         page: typeof request.body?.page === 'string' ? request.body.page : undefined,
       },
-      'frontend interaction',
+      'frontend interaction'
     );
     response.status(204).end();
   });
@@ -82,11 +82,11 @@ export async function createApp(options: AppOptions = {}) {
       error: unknown,
       _request: express.Request,
       response: express.Response,
-      _next: express.NextFunction,
+      _next: express.NextFunction
     ) => {
       logger.error({ err: error }, 'request failed');
       response.status(500).json({ detail: 'Internal server error' });
-    },
+    }
   );
 
   return app;

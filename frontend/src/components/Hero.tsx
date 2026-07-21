@@ -1,8 +1,10 @@
 import { useStore, useSelectedLocation } from '../state/store';
 import { LocationIcon, RefreshIcon } from './icons';
+import { MapCard } from './MapCard';
 import { HourlyStrip } from './HourlyStrip';
 import { TenDayForecast } from './TenDayForecast';
 import { TileGrid } from './Tiles';
+import { ThemeSelector } from './ThemeSelector';
 import { formatTemperature, formatTime } from './format';
 
 export function Hero() {
@@ -12,6 +14,9 @@ export function Hero() {
   if (!selected) {
     return (
       <main className="flex flex-1 flex-col p-10">
+        <div className="flex justify-end">
+          <ThemeSelector />
+        </div>
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             <p className="text-2xl font-light text-white/85">Select a location</p>
@@ -39,7 +44,10 @@ export function Hero() {
   return (
     <main className="flex-1 overflow-y-auto">
       <div className="mx-auto flex max-w-5xl flex-col gap-3 p-6 lg:p-8">
-        <header className="flex flex-col items-center pt-6 pb-2 text-center">
+        <div className="flex justify-end pt-2">
+          <ThemeSelector />
+        </div>
+        <header className="flex flex-col items-center pb-2 text-center">
           {isHome && (
             <div className="mb-2 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
               <LocationIcon className="h-3 w-3" />
@@ -63,6 +71,7 @@ export function Hero() {
 
         <HourlyStrip periods={selected.weather?.forecast_periods} />
         <TenDayForecast weather={selected.weather} />
+        <MapCard />
         <TileGrid weather={selected.weather} />
 
         <footer className="mt-2 flex flex-col items-center gap-3 pb-8 text-xs text-white/55">

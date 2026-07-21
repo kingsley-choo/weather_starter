@@ -177,14 +177,82 @@ export class SingaporeWeatherClient {
       apiKey?: string;
       timeoutMs?: number;
       userAgent?: string;
-    } = {},
+    } = {}
   ) {}
 
   async getCurrentWeather(latitude: number, longitude: number): Promise<WeatherSnapshot> {
-    const forecastPayload = await this.fetchLatestForecastPayload().catch(() => null);
-    return forecastPayload
-      ? this.snapshotFromPayload(forecastPayload, latitude, longitude)
+    const safe = async <T>(fn: () => Promise<T>): Promise<T | null> => {
+      try {
+        return await fn();
+      } catch {
+        return null;
+      }
+    };
+
+    const forecast = await safe(() => this.fetchLatestForecastPayload());
+    const temperature = await safe(() =>
+      this.fetchNearestReading('air-temperature', latitude, longitude)
+    );
+    const humidity = await safe(() =>
+      this.fetchNearestReading('relative-humidity', latitude, longitude)
+    );
+    const rainfall = await safe(() => this.fetchNearestReading('rainfall', latitude, longitude));
+    const windSpeed = await safe(() => this.fetchNearestReading('wind-speed', latitude, longitude));
+    const windDir = await safe(() =>
+      this.fetchNearestReading('wind-direction', latitude, longitude)
+    );
+    const uv = await safe(() => this.fetchUvIndex());
+    const psi = await safe(() => this.fetchPsiPayload());
+    const pm25 = await safe(() => this.fetchPm25Payload());
+    const twentyFour = await safe(() => this.fetchTwentyFourHourPayload());
+    const fourDay = await safe(() => this.fetchFourDayPayload());
+
+    const base = forecast
+      ? this.snapshotFromPayload(forecast, latitude, longitude)
       : this.emptyForecastSnapshot();
+
+    const aqRegion = psi
+      ? nearestRegionName(psi.data?.regionMetadata ?? [], latitude, longitude)
+      : null;
+
+    const region24 = nearestRegionName(defaultRegions(), latitude, longitude) ?? 'central';
+    const record24 = twentyFour?.data?.records?.[0];
+    const forecastPeriods: ForecastPeriod[] = (record24?.periods ?? [])
+      .map((p) => ({
+        label: p.timePeriod?.text ?? '',
+        forecast: p.regions?.[region24]?.text ?? p.regions?.central?.text ?? '',
+      }))
+      .filter((p) => p.label && p.forecast);
+
+    const fourDayItem = fourDay?.items?.[0];
+    const dailyForecast: DailyForecast[] = (fourDayItem?.forecasts ?? [])
+      .map((f) => ({
+        date: f.date ?? f.timestamp ?? '',
+        forecast: f.forecast ?? '',
+        temperature_low_c: numberOrNull(f.temperature?.low),
+        temperature_high_c: numberOrNull(f.temperature?.high),
+      }))
+      .filter((f) => f.date && f.forecast);
+
+    return {
+      ...base,
+      temperature_c: temperature?.value ?? null,
+      humidity_percent: humidity?.value ?? null,
+      rainfall_mm: rainfall?.value ?? null,
+      wind_speed_knots: windSpeed?.value ?? null,
+      wind_direction_degrees: windDir?.value ?? null,
+      uv_index: uv?.value ?? null,
+      psi_twenty_four_hourly: valueForRegion(
+        psi?.data?.items?.[0]?.readings?.psi_twenty_four_hourly,
+        aqRegion
+      ),
+      pm25_one_hourly: valueForRegion(pm25?.data?.items?.[0]?.readings?.pm25_one_hourly, aqRegion),
+      air_quality_region: aqRegion,
+      forecast_low_c: numberOrNull(record24?.general?.temperature?.low),
+      forecast_high_c: numberOrNull(record24?.general?.temperature?.high),
+      forecast_periods: forecastPeriods,
+      daily_forecast: dailyForecast,
+    };
   }
 
   async fetchLatestForecastPayload(): Promise<ForecastPayload> {
@@ -199,12 +267,12 @@ export class SingaporeWeatherClient {
       | 'wind-speed'
       | 'wind-direction',
     latitude: number,
-    longitude: number,
+    longitude: number
   ): Promise<{ value: number | null; timestamp: string | null }> {
     const payload = await this.fetchReadingPayload(endpoint);
     if (payload.code !== undefined && payload.code !== 0) {
       throw new WeatherProviderError(
-        payload.errorMsg ?? `Weather provider returned an error for ${endpoint}`,
+        payload.errorMsg ?? `Weather provider returned an error for ${endpoint}`
       );
     }
 
@@ -218,7 +286,7 @@ export class SingaporeWeatherClient {
     const valueByStation = new Map(
       values
         .map((entry) => [entry.stationId, Number(entry.value)] as const)
-        .filter((entry): entry is [string, number] => Boolean(entry[0]) && !Number.isNaN(entry[1])),
+        .filter((entry): entry is [string, number] => Boolean(entry[0]) && !Number.isNaN(entry[1]))
     );
     const station = nearestStation(stations, latitude, longitude, valueByStation);
     return {
@@ -235,7 +303,7 @@ export class SingaporeWeatherClient {
     const payload = await this.fetchJson<UvPayload>(`${this.apiBaseUrl()}/v2/real-time/api/uv`);
     if (payload.code !== undefined && payload.code !== 0) {
       throw new WeatherProviderError(
-        payload.errorMsg ?? 'Weather provider returned an error for uv',
+        payload.errorMsg ?? 'Weather provider returned an error for uv'
       );
     }
 
@@ -247,90 +315,38 @@ export class SingaporeWeatherClient {
     };
   }
 
-  async fetchAirQuality(
-    latitude: number,
-    longitude: number,
-  ): Promise<{
-    psi: number | null;
-    pm25: number | null;
-    region: string | null;
-    timestamp: string | null;
-  }> {
-    const [psiPayload, pm25Payload] = await Promise.all([
-      this.fetchJson<PsiPayload>(`${this.apiBaseUrl()}/v2/real-time/api/psi`),
-      this.fetchJson<PsiPayload>(`${this.apiBaseUrl()}/v2/real-time/api/pm25`),
-    ]);
-    for (const payload of [psiPayload, pm25Payload]) {
-      if (payload.code !== undefined && payload.code !== 0) {
-        throw new WeatherProviderError(
-          payload.errorMsg ?? 'Weather provider returned an air quality error',
-        );
-      }
+  async fetchPsiPayload(): Promise<PsiPayload> {
+    const payload = await this.fetchJson<PsiPayload>(`${this.apiBaseUrl()}/v2/real-time/api/psi`);
+    if (payload.code !== undefined && payload.code !== 0) {
+      throw new WeatherProviderError(payload.errorMsg ?? 'Weather provider returned a PSI error');
     }
-
-    const region = nearestRegionName(psiPayload.data?.regionMetadata ?? [], latitude, longitude);
-    const psiItem = psiPayload.data?.items?.[0];
-    const pm25Item = pm25Payload.data?.items?.[0];
-    return {
-      psi: valueForRegion(psiItem?.readings?.psi_twenty_four_hourly, region),
-      pm25: valueForRegion(pm25Item?.readings?.pm25_one_hourly, region),
-      region,
-      timestamp: latestTimestamp([
-        psiItem?.updatedTimestamp ?? psiItem?.timestamp ?? null,
-        pm25Item?.updatedTimestamp ?? pm25Item?.timestamp ?? null,
-      ]),
-    };
+    return payload;
   }
 
-  async fetchTwentyFourHourForecast(
-    latitude: number,
-    longitude: number,
-  ): Promise<{
-    low: number | null;
-    high: number | null;
-    periods: ForecastPeriod[];
-    timestamp: string | null;
-  }> {
+  async fetchPm25Payload(): Promise<PsiPayload> {
+    const payload = await this.fetchJson<PsiPayload>(`${this.apiBaseUrl()}/v2/real-time/api/pm25`);
+    if (payload.code !== undefined && payload.code !== 0) {
+      throw new WeatherProviderError(payload.errorMsg ?? 'Weather provider returned a PM2.5 error');
+    }
+    return payload;
+  }
+
+  async fetchTwentyFourHourPayload(): Promise<TwentyFourHourPayload> {
     const payload = await this.fetchJson<TwentyFourHourPayload>(
-      `${this.apiBaseUrl()}/v2/real-time/api/twenty-four-hr-forecast`,
+      `${this.apiBaseUrl()}/v2/real-time/api/twenty-four-hr-forecast`
     );
     if (payload.code !== undefined && payload.code !== 0) {
       throw new WeatherProviderError(
-        payload.errorMsg ?? 'Weather provider returned a 24-hour forecast error',
+        payload.errorMsg ?? 'Weather provider returned a 24-hour forecast error'
       );
     }
-
-    const record = payload.data?.records?.[0];
-    const region = nearestRegionName(defaultRegions(), latitude, longitude) ?? 'central';
-    return {
-      low: numberOrNull(record?.general?.temperature?.low),
-      high: numberOrNull(record?.general?.temperature?.high),
-      periods: (record?.periods ?? [])
-        .map((period) => ({
-          label: period.timePeriod?.text ?? '',
-          forecast: period.regions?.[region]?.text ?? period.regions?.central?.text ?? '',
-        }))
-        .filter((period) => period.label && period.forecast),
-      timestamp: record?.updatedTimestamp ?? record?.timestamp ?? null,
-    };
+    return payload;
   }
 
-  async fetchFourDayForecast(): Promise<{ days: DailyForecast[]; timestamp: string | null }> {
-    const payload = await this.fetchJson<FourDayPayload>(
-      `${this.legacyApiBaseUrl()}/v1/environment/4-day-weather-forecast`,
+  async fetchFourDayPayload(): Promise<FourDayPayload> {
+    return this.fetchJson<FourDayPayload>(
+      `${this.legacyApiBaseUrl()}/v1/environment/4-day-weather-forecast`
     );
-    const item = payload.items?.[0];
-    return {
-      days: (item?.forecasts ?? [])
-        .map((forecast) => ({
-          date: forecast.date ?? forecast.timestamp ?? '',
-          forecast: forecast.forecast ?? '',
-          temperature_low_c: numberOrNull(forecast.temperature?.low),
-          temperature_high_c: numberOrNull(forecast.temperature?.high),
-        }))
-        .filter((forecast) => forecast.date && forecast.forecast),
-      timestamp: item?.update_timestamp ?? item?.timestamp ?? null,
-    };
   }
 
   private apiBaseUrl(): string {
@@ -341,7 +357,7 @@ export class SingaporeWeatherClient {
     return 'https://api.data.gov.sg';
   }
 
-  private async fetchJson<T>(url: string): Promise<T> {
+  private async fetchJson<T>(url: string, attempt = 0): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs ?? 8000);
 
@@ -356,6 +372,12 @@ export class SingaporeWeatherClient {
       });
 
       if (!response.ok) {
+        if (response.status === 429 && attempt < 3) {
+          clearTimeout(timeout);
+          const delay = 500 * 2 ** attempt + Math.random() * 200;
+          await new Promise<void>((resolve) => setTimeout(resolve, delay));
+          return this.fetchJson<T>(url, attempt + 1);
+        }
         if (response.status === 429) {
           throw new WeatherProviderError('Weather provider rate limit reached (HTTP 429)');
         }
@@ -377,7 +399,7 @@ export class SingaporeWeatherClient {
   snapshotFromPayload(
     payload: ForecastPayload,
     latitude: number,
-    longitude: number,
+    longitude: number
   ): WeatherSnapshot {
     if (payload.code !== undefined && payload.code !== 0) {
       throw new WeatherProviderError(payload.errorMsg ?? 'Weather provider returned an error');
@@ -399,7 +421,7 @@ export class SingaporeWeatherClient {
     const forecastByArea = new Map(
       forecasts
         .filter((entry) => entry.area && entry.forecast)
-        .map((entry) => [entry.area as string, entry.forecast as string]),
+        .map((entry) => [entry.area as string, entry.forecast as string])
     );
 
     const nearestArea = nearestAreaName(areaMetadata, latitude, longitude);
@@ -476,7 +498,7 @@ export class SingaporeWeatherClient {
 function nearestAreaName(
   areaMetadata: AreaMetadata[],
   latitude: number,
-  longitude: number,
+  longitude: number
 ): string | null {
   let nearest: { name: string; distance: number } | null = null;
 
@@ -497,7 +519,7 @@ function nearestAreaName(
 function nearestRegionName(
   regions: RegionMetadata[],
   latitude: number,
-  longitude: number,
+  longitude: number
 ): string | null {
   let nearest: { name: string; distance: number } | null = null;
 
@@ -519,7 +541,7 @@ function nearestStation(
   stations: WeatherStation[],
   latitude: number,
   longitude: number,
-  valueByStation: Map<string, number>,
+  valueByStation: Map<string, number>
 ): { id: string; distance: number } | null {
   let nearest: { id: string; distance: number } | null = null;
 
@@ -538,14 +560,6 @@ function nearestStation(
   return nearest;
 }
 
-function latestTimestamp(timestamps: Array<string | null>): string | null {
-  return (
-    timestamps
-      .filter((timestamp): timestamp is string => Boolean(timestamp))
-      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
-  );
-}
-
 function numberOrNull(value: number | string | undefined): number | null {
   const number = Number(value);
   return Number.isNaN(number) ? null : number;
@@ -553,12 +567,11 @@ function numberOrNull(value: number | string | undefined): number | null {
 
 function valueForRegion(
   values: Record<string, number | string> | undefined,
-  region: string | null,
+  region: string | null
 ): number | null {
   if (!values || !region) return null;
   return numberOrNull(values[region]);
 }
-
 
 function defaultRegions(): RegionMetadata[] {
   return [

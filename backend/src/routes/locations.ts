@@ -2,6 +2,7 @@ import type { Router } from 'express';
 import { Router as createRouter } from 'express';
 import {
   createLocation,
+  deleteLocation,
   getLocation,
   listLocations,
   updateWeather,
@@ -51,7 +52,7 @@ export function createLocationsRouter(options: LocationsRouterOptions = {}): Rou
       try {
         const snapshot = await weatherClient.getCurrentWeather(
           location.latitude,
-          location.longitude,
+          location.longitude
         );
         const updated = await updateWeather(location.id, snapshot);
         response.status(201).json(updated ?? location);
@@ -59,7 +60,7 @@ export function createLocationsRouter(options: LocationsRouterOptions = {}): Rou
         if (!(error instanceof WeatherProviderError)) throw error;
         logger.warn(
           { err: error, locationId: location.id },
-          'weather refresh failed after location create',
+          'weather refresh failed after location create'
         );
         response.status(201).json(location);
       }
@@ -81,6 +82,20 @@ export function createLocationsRouter(options: LocationsRouterOptions = {}): Rou
         return;
       }
       response.json(location);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete('/locations/:locationId', async (request, response, next) => {
+    try {
+      const locationId = Number(request.params.locationId);
+      const deleted = await deleteLocation(locationId);
+      if (!deleted) {
+        response.status(404).json({ detail: 'Location not found' });
+        return;
+      }
+      response.status(204).send();
     } catch (error) {
       next(error);
     }

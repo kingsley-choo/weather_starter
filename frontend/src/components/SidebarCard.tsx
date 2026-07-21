@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { useStore } from '../state/store';
 import { CloudIcon, HomeIcon } from './icons';
 import { formatTemperature, formatTime } from './format';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, MouseEvent } from 'react';
 import type { Location } from '../types';
 
 interface SidebarCardProps {
@@ -10,7 +11,8 @@ interface SidebarCardProps {
 }
 
 export function SidebarCard({ location, isHome }: SidebarCardProps) {
-  const { selectedId, select } = useStore();
+  const { selectedId, select, remove } = useStore();
+  const [hovered, setHovered] = useState(false);
   const isSelected = selectedId === location.id;
   const observed = formatTime(location.weather.observed_at);
   const area =
@@ -28,19 +30,39 @@ export function SidebarCard({ location, isHome }: SidebarCardProps) {
       onSelect();
     }
   };
+  const onDelete = (event: MouseEvent) => {
+    event.stopPropagation();
+    void remove(location.id);
+  };
+
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={onKeyDown}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       aria-pressed={isSelected}
-      className={`relative w-full cursor-pointer overflow-hidden rounded-2xl border text-left backdrop-blur-xl transition ${
-        isSelected
-          ? 'border-white/30 bg-white/20 shadow-lg shadow-black/20'
-          : 'border-white/10 bg-white/[0.07] hover:bg-white/[0.12]'
-      }`}
+      className="group relative w-full cursor-pointer overflow-hidden rounded-2xl border text-left backdrop-blur-xl transition"
+      style={{
+        background: isSelected
+          ? 'var(--card-active-bg)'
+          : hovered
+            ? 'var(--card-hover-bg)'
+            : 'var(--card-idle-bg)',
+        borderColor: isSelected ? 'var(--card-active-border)' : 'var(--card-border)',
+        boxShadow: isSelected ? '0 10px 25px rgba(0,0,0,0.20)' : undefined,
+      }}
     >
+      <button
+        onClick={onDelete}
+        aria-label={`Delete ${area}`}
+        className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full text-white/0 transition hover:bg-red-500/20 hover:text-red-400 group-hover:text-white/40"
+      >
+        ✕
+      </button>
+
       <div className="flex items-start justify-between gap-3 px-4 pt-3">
         <div className="min-w-0">
           <div className="truncate text-lg font-semibold leading-tight text-white">{area}</div>

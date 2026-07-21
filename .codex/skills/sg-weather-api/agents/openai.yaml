@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Singapore Weather API'
+  short_description: 'Integrate Singapore weather data safely'
+  default_prompt: 'Use $sg-weather-api to integrate Singapore weather API data.'

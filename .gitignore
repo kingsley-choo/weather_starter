@@ -19,6 +19,7 @@ dist/
 .vite/
 
 # Astro / Starlight
+.astro/
 docs/.astro/
 docs/dist/
 

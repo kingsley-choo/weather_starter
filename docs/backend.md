@@ -1,33 +1,58 @@
 # Backend
 
+Express owns the REST API, SQLite store, and weather integration. In development it mounts Vite middleware; production serves frontend/dist.
+
+```mermaid
+flowchart LR
+ Browser[React app] -->|relative /api| Express[Express]
+ Express --> Routes[/api/locations]
+ Express --> Vite[Vite middleware]
+ Routes --> DB[(SQLite)]
+ Routes --> Weather[SingaporeWeatherClient]
+ Weather --> Provider[api-open.data.gov.sg]
+```
+
 ## Key files
 
-- [backend/src/server.ts](../backend/src/server.ts) — entry point; mounts routes and Vite middleware
-- [backend/src/routes/locations.ts](../backend/src/routes/locations.ts) — REST API at `/api/locations`
-- [backend/src/weather.ts](../backend/src/weather.ts) — Singapore weather client
-- [backend/src/db.ts](../backend/src/db.ts) — Drizzle ORM setup
-- [backend/src/schema.ts](../backend/src/schema.ts) — table definition
+- backend/src/server.ts: app setup, /health, /api/logs, Vite/static serving, and errors.
+- backend/src/routes/locations.ts: CRUD routes, validation, and refresh behavior.
+- backend/src/weather.ts: provider requests, retries, parsing, and nearest-neighbor matching.
+- backend/src/db.ts and schema.ts: Drizzle/SQLite persistence and snapshot shape.
+
+## API
+
+| Method | Route | Behavior |
+| --- | --- | --- |
+| GET | /health | Returns status healthy. |
+| GET | /api/locations | Lists locations, newest first. |
+| POST | /api/locations | Validates Singapore coordinates, inserts a placeholder, then attempts weather loading. Returns 201; provider failure still returns the placeholder. |
+| GET | /api/locations/:id | Gets one location, or 404. |
+| POST | /api/locations/:id/refresh | Replaces its latest weather snapshot; provider failure returns 502. |
+| DELETE | /api/locations/:id | Deletes a location, or returns 404. |
+| POST | /api/logs | Validates and logs frontend interaction events. |
+
+Coordinates must be numeric and within latitude 1.1–1.5 and longitude 103.6–104.1. Duplicate coordinates return 409. Frontend requests remain relative: no proxy or CORS layer is needed.
 
 ## Database
 
-SQLite file at `backend/weather.db` (override with `DATABASE_PATH` env var). Uses Node's built-in `node:sqlite` (`DatabaseSync`) via the Drizzle `sqlite-proxy` adapter, WAL mode enabled.
+The default database is backend/weather.db; DATABASE_PATH overrides it. Node’s DatabaseSync is used through Drizzle’s sqlite-proxy adapter, with WAL mode enabled. Migrations in backend/drizzle run during initialization.
 
-One table: `locations`. Weather data is a **snapshot model** — the latest reading overwrites the row; there is no historical time-series.
+The locations table stores one latest snapshot per coordinate: scalar readings plus forecast_periods and daily_forecast JSON columns. It is not a historical time-series store.
 
-```bash
-npm run db:generate   # Generate Drizzle migration files after schema changes
-npm run db:migrate    # Apply pending migrations (also runs automatically at startup)
-npm run reset         # Delete backend/weather.db entirely
+```mermaid
+sequenceDiagram
+ participant UI as Browser
+ participant API as Express
+ participant DB as SQLite
+ participant NEA as Weather provider
+ UI->>API: POST /api/locations
+ API->>DB: Insert placeholder
+ API->>NEA: Fetch feeds
+ NEA-->>API: Payloads or failure
+ API->>DB: Update snapshot when available
+ API-->>UI: 201 location
 ```
 
-## Other commands
+## Commands
 
-```bash
-npm run build    # vite build + tsc -p backend/tsconfig.json
-npm run start    # Run compiled production server
-npm run doctor   # Smoke-test /health and /api/locations
-```
-
-## Validation
-
-Coordinates are validated to Singapore bounds: lat 1.1–1.5, lon 103.6–104.1.
+npm run dev, npm test, npm run build, npm run start, npm run doctor, npm run db:generate, npm run db:migrate, and npm run reset.

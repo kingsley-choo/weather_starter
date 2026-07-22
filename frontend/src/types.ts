@@ -58,6 +58,7 @@ export interface StoreValue {
   create: (payload: CreateLocationPayload) => Promise<void>;
   refresh: (id: number) => Promise<void>;
   remove: (id: number) => Promise<void>;
+  loadLocations: () => Promise<Location[]>;
 }
 
 export interface ProviderProps {
